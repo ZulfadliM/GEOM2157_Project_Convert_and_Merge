@@ -1,4 +1,4 @@
-# Geospatial_Programming_Major_Project
+# Geospatial Programming Major Project: Convert and Merge
 
 Created by: Zulfadli Mawardi, S3915436
 
