@@ -83,6 +83,8 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
         1. The last 7 fields to the 2nd last field contains Unix Epoch timestamp\
         2. Start date of observation (stored in the 6 time fields) starts from 20-Jan-22 to 04-Apr-22\n\
         3. the csv file only contains a single pair of xy coordinate per row\
+        \n\
+        Output layer added to the map is the final output layer.\
          ")
 
     def initAlgorithm(self, config=None):
@@ -111,7 +113,7 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterEnum(
                 self.SUFFIX,
                 self.tr('Suffix options'),
-                options=['Vodafone_-_9C65F933984C_DataRate_Agg','Telstra_-_9C65F9339DE8_DataRate_Agg','Optus_-_9C65F9339228_DataRate_Agg'],
+                options=['All','Vodafone_-_9C65F933984C_DataRate_Agg','Telstra_-_9C65F9339DE8_DataRate_Agg','Optus_-_9C65F9339228_DataRate_Agg'],
                 #default='',
                 optional=True
             )
@@ -126,6 +128,7 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
         
     def processAlgorithm(self, parameters, context, feedback):
         
+        # Function to test if value is a float
         def isfloat(num):
             try:
                 float(num)
@@ -159,16 +162,15 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
         spatRef = QgsCoordinateReferenceSystem(4326, QgsCoordinateReferenceSystem.EpsgCrsId)
  
         # Get folder path
-        
         fileDir = source_folder
         fileList = os.listdir(fileDir)
 
-        
         # Create a layer for the csv file and get the column headings
         csv_base = QgsVectorLayer(fileDir+'\\'+fileList[0], fileList[0][:-4], 'ogr')
         csvbaseData = csv_base.dataProvider()
         fields = csvbaseData.fields()
         
+        # Create new fields to store floats
         newFields = QgsFields()
         vals = csv_base.getFeature(fid=1).attributes()
         for v in range(len(vals)):
@@ -190,19 +192,19 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
             spatRef
         )
         
-        #Create a temporary layer to store feature points and add the field names
+        # Create a temporary layer to store feature points and add the field names
         temp_layer = QgsVectorLayer('Point','default output','memory')
         temp_layer_data = temp_layer.dataProvider()
         temp_layer_data.addAttributes(newFields)
         temp_layer.updateFields()
         
-        # Create an empty list to store features to be merged
-        feats = []
+        # Variable for progress bar
         count = 0
         total = len(fileList)
         
-        Suffixes = {0:'Vodafone_-_9C65F933984C_DataRate_Agg',1:'Telstra_-_9C65F9339DE8_DataRate_Agg',2:'Optus_-_9C65F9339228_DataRate_Agg'}
-        if suffix is not None:
+        # Obtain suffix
+        Suffixes = {1:'Vodafone_-_9C65F933984C_DataRate_Agg',2:'Telstra_-_9C65F9339DE8_DataRate_Agg',3:'Optus_-_9C65F9339228_DataRate_Agg'}
+        if suffix != 0 :
             suffix = Suffixes[suffix]
         else:
             suffix = ''
@@ -210,38 +212,28 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
         # Running the algorithm for every file in the source folder
         for file in fileList:
             if file[-3:] == 'csv':
-                # Filter files by suffix                
-                if file[:-4].endswith(''):
-                # Assign file basename to a variable
+                # Filter files by suffix
+                if file[:-4].endswith(suffix):
+                    # Assign file basename to a variable
                     filename_ = file[:-4]
-                
+                    
+                    # Counter for progress bar
+                    count = count+1
+                    
                     # Create a layer for the csv file and get the column headings
                     csv_file = QgsVectorLayer(fileDir+'\\'+filename_+'.csv', filename_, 'ogr')
-                    csv_base = QgsVectorLayer(fileDir+'\\'+fileList[0], fileList[0][:-4], 'ogr')
-                    csvbaseData = csv_base.dataProvider()
-                    fields = csvbaseData.fields()
-                    
-                    newFields = QgsFields()
-                    vals = csv_base.getFeature(fid=1).attributes()
-                    for v in range(len(vals)):
-                        if isfloat(vals[v]):
-                            newFields.append(QgsField(fields[v].name(), QVariant.Double))
-                        else:
-                            newFields.append(QgsField(fields[v].name(), QVariant.String))
-                    
-                    # Add new field for converted time
-                    for i in range(1,7):
-                        newFields.append(QgsField('T'+str(i)+'_CONVERTED', QVariant.DateTime))
                     
                     # Reads every row/feature in the csv file
                     for feat in csv_file.getFeatures():
                         
                         # Add the table values to the tmeporary layer
                         attrs = feat.attributes()
-                    
+                        
+                        # Create new features to store new points
                         pt = QgsPointXY()
                         outFeature = QgsFeature()
                         
+                        # Convert strings in csv to floats
                         for k in range(len(attrs)):
                             if isfloat(attrs[k]):
                                 attrs[k]=float(attrs[k])
@@ -264,11 +256,9 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
                         pt.setY(float(feat[lat_field]))
                         outFeature.setGeometry(QgsGeometry.fromPointXY(pt))
                         temp_layer_data.addFeature(outFeature)
-                        count = count+1
+                        
                     # Update the progress bar
                     feedback.setProgress(int(count * total))
-        
-        QgsProject.instance().addMapLayer(temp_layer)
         
         # Select points in the polygon
         if sel_lyr is not None:
@@ -279,12 +269,12 @@ class CSVToSHPProcessingAlgorithm(QgsProcessingAlgorithm):
             new_layer = SelOut_Lyr['OUTPUT'].materialize(QgsFeatureRequest().setFilterFids(SelOut_Lyr['OUTPUT'].selectedFeatureIds()))
         else:
             new_layer = temp_layer
-        # Transfer the selected feature to sink layer
         
+        # Transfer the selected feature to sink layer
         for f in new_layer.getFeatures():
             sink.addFeature(f)
         
         # Send some information to the user
         feedback.pushInfo('CRS is {4326}')
         
-        return {self.OUTPUT:temp_layer.featureCount()}
+        return {self.OUTPUT:dest_id}
