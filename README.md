@@ -2,7 +2,7 @@
 
 Created by: Zulfadli Mawardi, S3915436
 
-A major project assignment in lieu of the GEOM2157 Geospatial Programming course in RMIT University
+A major project assignment with regards to the GEOM2157 Geospatial Programming course in RMIT University
 
 This is a customized Processing Tool script made to convert
 one or more csv files in a folder to shapefile(s) and merge the shapefiles grouped by
